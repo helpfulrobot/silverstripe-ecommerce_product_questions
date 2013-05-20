@@ -21,7 +21,8 @@ class ProductQuestion_OrderItemExtension extends DataObjectDecorator {
 			),
 			'casting' => array(
 				'ProductQuestionsAnswerNOHTML' => 'Text',
-				'ConfigureLink' => 'HTMLText'
+				'ConfigureLabel' => 'Varchar',
+				'ConfigureLink' => 'Varchar'
 			)
 		);
 	}
@@ -41,18 +42,55 @@ class ProductQuestion_OrderItemExtension extends DataObjectDecorator {
 	 * and adds the relevant requirements
 	 * @return String
 	 */
+	function ConfigureLabel() {
+		Requirements::javascript("ecommerce_product_questions/javascript/EcomProductQuestions.js");
+		if($this->owner->Order()->IsSubmitted()) {
+			return "";
+		}
+		else {
+			return $this->owner->ProductQuestionsAnswerFormLabel();
+		}
+	}
+
+	/**
+	 * returns a link to configure an OrderItem
+	 * and adds the relevant requirements
+	 * @return String
+	 */
 	function ConfigureLink() {
 		Requirements::javascript("ecommerce_product_questions/javascript/EcomProductQuestions.js");
-		return $this->owner->ProductQuestionsAnswerFormLink();
+		if($this->owner->Order()->IsSubmitted()) {
+			return "";
+		}
+		else {
+			return $this->owner->ProductQuestionsAnswerFormLink();
+		}
 	}
 
 	/**
 	 *returns the link to edit the products.
 	 * @return String
 	 */
+	function ProductQuestionsAnswerFormLabel(){
+		if($this->owner->HasProductQuestions()) {
+			$buyable = $this->productQuestionBuyable();
+			if($buyable) {
+				if($label = $buyable->CustomConfigureLabel()){
+					return $label;
+				}
+			}
+			return _t("ProductQuestion.CONFIGURE", "Configure");
+		}
+		return "";
+	}
+	
+	/**
+	 *returns the link to edit the products.
+	 * @return String
+	 */
 	function ProductQuestionsAnswerFormLink(){
 		if($this->owner->HasProductQuestions()) {
-			$buyable = $this->productQuestionProduct();
+			$buyable = $this->productQuestionBuyable();
 			if($buyable) {
 				return $buyable->ProductQuestionsAnswerFormLink($this->owner->ID);
 			}
@@ -60,23 +98,23 @@ class ProductQuestion_OrderItemExtension extends DataObjectDecorator {
 		return "";
 	}
 
-	protected static $has_product_questions = null;
+	protected static $has_product_questions = array();
 
 	/**
 	 *
 	 * @return Boolean
 	 */
 	function HasProductQuestions(){
-		if(self::$has_product_questions === null) {
+		if(!isset(self::$has_product_questions[$this->owner->ID])) {
 			$productQuestions = $this->owner->ProductQuestions();
 			if($productQuestions && $productQuestions->count()) {
-				self::$has_product_questions = true;
+				self::$has_product_questions[$this->owner->ID] = true;
 			}
 			else {
-				self::$has_product_questions = false;
+				self::$has_product_questions[$this->owner->ID] = false;
 			}
 		}
-		return self::$has_product_questions;
+		return self::$has_product_questions[$this->owner->ID];
 	}
 
 	/**
@@ -84,7 +122,7 @@ class ProductQuestion_OrderItemExtension extends DataObjectDecorator {
 	 * @return DataObjectSet | Null
 	 */
 	function ProductQuestions(){
-		if($buyable = $this->productQuestionProduct()) {
+		if($buyable = $this->owner->productQuestionBuyable()) {
 			return $buyable->ProductQuestions();
 		}
 		return null;
@@ -101,16 +139,11 @@ class ProductQuestion_OrderItemExtension extends DataObjectDecorator {
 	 *
 	 * @return Product | Null
 	 */
-	protected function productQuestionProduct(){
-		if(self::$product_question_product === null) {
-			self::$product_question_product = $this->owner->Buyable();
-			if(self::$product_question_product) {
-				if(self::$product_question_product instanceOF ProductVariation) {
-					self::$product_question_product = self::$product_question_product->Product();
-				}
-			}
+	public function productQuestionBuyable(){
+		if(!isset(self::$product_question_product[$this->owner->ID])) {
+			self::$product_question_product[$this->owner->ID] = $this->owner->Buyable();
 		}
-		return self::$product_question_product;
+		return self::$product_question_product[$this->owner->ID];
 	}
 
 	/**
@@ -119,7 +152,7 @@ class ProductQuestion_OrderItemExtension extends DataObjectDecorator {
 	 */
 	function ProductQuestionsAnswerForm($controller, $name = "productquestionsanswerselect") {
 		$productQuestions = $this->owner->ProductQuestions();
-		$buyable = $this->productQuestionProduct();
+		$buyable = $this->productQuestionBuyable();
 		$backURL = Session::get("BackURL");
 		if($backURL || empty($_GET["BackURL"])) {
 			//do nothing
@@ -133,8 +166,13 @@ class ProductQuestion_OrderItemExtension extends DataObjectDecorator {
 				new HiddenField("OrderItemID", "OrderItemID", $this->owner->ID),
 				new HiddenField("BackURL", "BackURL", $backURL)
 			);
+			$values = array();
+			if($this->owner->JSONAnswers) {
+				$values = @Convert::json2array($this->owner->JSONAnswers);
+			}
 			foreach($productQuestions as $productQuestion) {
-				$fields->push($productQuestion->getFieldForProduct($buyable)); //TODO: perhaps use a dropdown instead (elimiates need to use keyboard)
+				$value = empty($values[$productQuestion->ID]) ? null : $values[$productQuestion->ID];
+				$fields->push($productQuestion->getFieldForProduct($buyable, $value)); //TODO: perhaps use a dropdown instead (elimiates need to use keyboard)
 			}
 			$actions = new FieldSet(
 				array(

@@ -72,6 +72,30 @@ class ProductQuestion extends DataObject {
 		}
 
 	/**
+	 * turns an option into potential file names
+	 * e.g. red
+	 * returns
+	 * red.jpg, red.png, red.gif
+	 * @param String $option
+	 * @return Array
+	 */
+	public static function create_file_array_from_option($option) {
+		$option = str_replace(' ', "-", trim($option));
+		$option = preg_replace("/[^a-z0-9_-]+/i", "", $option);
+		$imageOptions = array(
+			$option.".png",
+			$option.".PNG",
+			$option.".gif",
+			$option.".GIF" ,
+			$option.".jpg",
+			$option.".JPG",
+			$option.".jpeg",
+			$option.".JPEG"
+		);
+		return $imageOptions;
+	}
+
+	/**
 	 * Standard SS method
 	 * @return FieldSet
 	 */
@@ -101,10 +125,36 @@ class ProductQuestion extends DataObject {
 			if($this->FolderID) {
 				$imagesInFolder = DataObject::get("Image", "\"ParentID\" = ".$this->FolderID);
 				if($imagesInFolder) {
-					$imagesInFolderArray =$imagesInFolder->map("ID", "Name");
+					$imagesInFolderArray = $imagesInFolder->map("ID", "Name");
+					$options = explode(",", $this->Options);
 					$imagesInFolderField = new ReadonlyField("ImagesInFolder", _t("ProductQuestion.NO_IMAGES", "Images in folder"), implode("<br />", $imagesInFolderArray));
 					$imagesInFolderField->dontEscape = true;
-					$fields->addFieldToTab("Root.Main", $imagesInFolderField);
+					$fields->addFieldToTab("Root.Images", $imagesInFolderField);
+					//matches
+					if($this->exists()) {
+						$matchesInFolderArray = array();
+						$nonMatchesInFolderArray = array();
+						$options = explode(",", $this->Options);
+						if(count($options)) {
+							foreach($options as $option) {
+								$fileNameArray = self::create_file_array_from_option($option);
+								foreach($fileNameArray as $fileName) {
+									if(in_array($fileName, $imagesInFolderArray)) {
+										$matchesInFolderArray[$option] = "<strong>".$option."</strong>: ".$fileName;
+									}
+								}
+								if(!isset($matchesInFolderArray[$option])) {
+									$nonMatchesInFolderArray[$option] = "<strong>".$option."</strong>: ".implode(",", $fileNameArray);
+								}
+							}
+						}
+						$matchesInFolderField = new ReadonlyField("MatchesInFolder", _t("ProductQuestion.MATCHES_IN_FOLDER", "Matches in folder"), implode("<br />", $matchesInFolderArray));
+						$matchesInFolderField->dontEscape = true;
+						$fields->addFieldToTab("Root.Images", $matchesInFolderField);
+						$nonMatchesInFolderField = new ReadonlyField("NonMatchesInFolder", _t("ProductQuestion.NON_MATCHES_IN_FOLDER", "NON Matches in folder"), implode("<br />", $nonMatchesInFolderArray));
+						$nonMatchesInFolderField->dontEscape = true;
+						$fields->addFieldToTab("Root.Images", $nonMatchesInFolderField);
+					}
 				}
 				else {
 					$imagesInFolderField = new ReadonlyField("ImagesInFolder", "Images in folder", _t("ProductQuestion.NO_IMAGES", "There are no images in this folder"));
@@ -131,7 +181,7 @@ class ProductQuestion extends DataObject {
 	 */
 	function customFieldLabels(){
 		$newLabels = array(
-			"InternalCode" => _t("ProductQuestion.INTERNALCODE", "Code used to identify question (not snown to customers)"),
+			"InternalCode" => _t("ProductQuestion.INTERNALCODE", "Code used to identify question (not shown to customers)"),
 			"Question" => _t("ProductQuestion.QUESTION", "Question (e.g. what configuration do you prefer?)"),
 			"Label" => _t("ProductQuestion.LABEL", "Label (e.g. Your selected configuration)"),
 			"Options" => _t("ProductQuestion.OPTIONS", "Predefined Options (leave blank for any option).  These must be comma separated (e.g. red, blue, yellow, orange)"),
@@ -168,7 +218,7 @@ class ProductQuestion extends DataObject {
 	 *
 	 * @return FormField
 	 */
-	public function getFieldForProduct(Product $product){
+	public function getFieldForProduct(Product $product, $value = null){
 		if($this->Options) {
 			//if HasImages?
 			$finalOptions = array();
@@ -178,14 +228,14 @@ class ProductQuestion extends DataObject {
 				$finalOptions[Convert::raw2htmlatt($option)] = $option;
 			}
 			if($this->HasImages) {
-				return new ProductQuestionImageSelectorField($this->getFieldForProductName($product), $this->Question, $finalOptions, null, $this->FolderID);
+				return new ProductQuestionImageSelectorField($this->getFieldForProductName($product), $this->Question, $finalOptions, $value, $this->FolderID);
 			}
 			else {
-				return new DropdownField($this->getFieldForProductName($product), $this->Question, $finalOptions);
+				return new DropdownField($this->getFieldForProductName($product), $this->Question, $finalOptions, $value);
 			}
 		}
 		else {
-			return new TextField($this->getFieldForProductName($product), $this->Question);
+			return new TextField($this->getFieldForProductName($product), $this->Question, $value);
 		}
 	}
 
